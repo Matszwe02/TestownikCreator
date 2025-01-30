@@ -142,6 +142,30 @@ class ImageDropArea(QLabel):
         return None
 
 
+class ExportDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Download")
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+
+        self.zip_button = QPushButton("  Download ZIP  ")
+        self.json_button = QPushButton("  Download JSON  ")
+
+        self.layout.addWidget(self.zip_button)
+        self.layout.addWidget(self.json_button)
+
+        self.zip_button.clicked.connect(lambda: self.done(1))
+        self.json_button.clicked.connect(lambda: self.done(2))
+
+    def exec(self):
+        result = super().exec()
+        if result == 1:
+            return "ZIP"
+        elif result == 2:
+            return "JSON"
+        return None
+
 
 class AnswerField(QWidget):
     def __init__(self):
@@ -193,8 +217,8 @@ class TestownikCreator(QMainWindow):
         self.remove_question_button = QPushButton("Remove Question")
         self.left_layout.addWidget(self.remove_question_button)
         
-        self.download_button = QPushButton("Download ZIP")
-        self.download_button.clicked.connect(self.download_zip)
+        self.download_button = QPushButton("Download test")
+        self.download_button.clicked.connect(self.download_file)
         self.left_layout.addWidget(self.download_button)
         
         # Right side: Question input area
@@ -247,71 +271,107 @@ class TestownikCreator(QMainWindow):
         self.connect_signals()
 
 
-    def download_zip(self):
-        filename, _ = QFileDialog.getSaveFileName(
+    def download_file(self):
+        filename, ext = QFileDialog.getSaveFileName(
             self,
-            "Save Zip File",
+            "Download test",
             "",
-            "Zip Files (*.zip)"
+            "Zip Files (*.zip);;JSON Files (*.json)"
         )
+
         if filename:
-            try:
-                # Ensure the filename ends with .zip
-                if not filename.lower().endswith('.zip'):
-                    filename += '.zip'
+            if ext == "Zip Files (*.zip)":
+                self.export_as_zip(filename)
+            elif ext == "JSON Files (*.json)":
+                self.export_as_json(filename)
+        else:
+            print("Export cancelled")
 
-                # Create the zip file
-                with zipfile.ZipFile(filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
-                    # Process each question
-                    
-                    folder_name = os.path.basename(filename).split('.')[0]
 
-                    for question_number, question_data in self.questions_list.items():
-                        for question, answers in question_data.items():
-                            # Generate the content for the txt file
-                            
-                            image_name = ''
-                            
-                            if question_number in self.images:
-                                image_path = self.images[question_number]
-                                if os.path.exists(image_path):
-                                    image_name = f"{question_number}.png"
-                                    zip_file_name = os.path.join(folder_name, image_name)
-                                    
-                                    # Add text to image and write directly to zip
-                                    image_data = self.image_drop_area.add_text_to_image(question)
-                                    if image_data:
-                                        zipf.writestr(zip_file_name, image_data)
+    def export_as_zip(self, filename):
+        try:
+            # Ensure the filename ends with .zip
+            if not filename.lower().endswith('.zip'):
+                filename += '.zip'
 
-                            
-                            content = []
-                            correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
-                            correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"[:-1]
-                            content.append(correct_line + "\n")  # Correct answers line
-                            if image_name != '':
-                                content.append(f'[img]{image_name}[/img]')
-                            content.append(f"{question}\n")  # The question itself
-                            
-                            # Process answers
-                            for answer, _ in answers:
-                                content.append(f"{answer}\n")
-                            
-                            # Join the content and encode it
-                            file_content = "".join(content).encode('utf-8')
-                            
-                            # Write the content to the zip file
-                            zip_file_name = os.path.join(folder_name, f"{question_number}.txt")
-                            zipf.writestr(zip_file_name, file_content)
-                            
+            # Create the zip file
+            with zipfile.ZipFile(filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                # Process each question
+                
+                folder_name = os.path.basename(filename).split('.')[0]
 
-                            
+                for question_number, question_data in self.questions_list.items():
+                    for question, answers in question_data.items():
+                        # Generate the content for the txt file
+                        
+                        image_name = ''
+                        
+                        if question_number in self.images:
+                            image_path = self.images[question_number]
+                            if os.path.exists(image_path):
+                                image_name = f"{question_number}.png"
+                                zip_file_name = os.path.join(folder_name, image_name)
+                                
+                                # Add text to image and write directly to zip
+                                image_data = self.image_drop_area.add_text_to_image(question)
+                                if image_data:
+                                    zipf.writestr(zip_file_name, image_data)
+
+                        
+                        content = []
+                        correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
+                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"[:-1]
+                        content.append(correct_line + "\n")  # Correct answers line
+                        if image_name != '':
+                            content.append(f'[img]{image_name}[/img]')
+                        content.append(f"{question}\n")  # The question itself
+                        
+                        # Process answers
+                        for answer, _ in answers:
+                            content.append(f"{answer}\n")
+                        
+                        # Join the content and encode it
+                        file_content = "".join(content).encode('utf-8')
+                        
+                        # Write the content to the zip file
+                        zip_file_name = os.path.join(folder_name, f"{question_number}.txt")
+                        zipf.writestr(zip_file_name, file_content)
+
 
                 print(f"Zip file saved successfully: {filename}")
-            except Exception as e:
-                error_message = f"Error adding text to image: {str(e)}"
-                QMessageBox.critical(self.parent(), "Image Processing Error", error_message)
-        else:
-            print("File saving cancelled")
+        except Exception as e:
+            error_message = f"Error creating zip file: {str(e)}"
+            QMessageBox.critical(self.parent(), "Zip Creation Error", error_message)
+
+
+    def export_as_json(self, filename):
+        try:
+            # Ensure the filename ends with .json
+            if not filename.lower().endswith('.json'):
+                filename += '.json'
+
+            quiz_data = {
+                "title": os.path.basename(filename).split('.')[0],
+                "description": "Made with Testownik Creator by *Matszwe02*",
+                "questions": []
+            }
+
+            for question_number, question_data in self.questions_list.items():
+                for question, answers in question_data.items():
+                    correct_count = sum(corr for _, corr in answers)
+                    quiz_data["questions"].append({
+                        "question": question,
+                        "answers": [{"answer": ans, "correct": corr} for ans, corr in answers if ans.strip() != ""],
+                        "multiple": correct_count > 1
+                    })
+
+            with open(filename, 'w', encoding='utf-8') as f:
+                json.dump(quiz_data, f, ensure_ascii=False, indent=4)
+
+            print(f"JSON file saved successfully: {filename}")
+        except Exception as e:
+            error_message = f"Error creating JSON file: {str(e)}"
+            QMessageBox.critical(self.parent(), "JSON Creation Error", error_message)
 
 
     def update_similar_question(self, current_question):
