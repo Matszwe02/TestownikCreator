@@ -7,6 +7,7 @@ from PySide6.QtGui import QIcon, QPixmap
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+import math
 import json
 
 import resources_rc
@@ -15,7 +16,7 @@ import resources_rc
 from difflib import SequenceMatcher
 
 
-image_size_limits = [400, 600]
+image_size_limits = [600, 600]
 similarity_limit = 0.6
 
 
@@ -32,7 +33,8 @@ class ImageDropArea(QLabel):
         self.image_path = None
         self.default_text = "Drag and drop image here\n only images from windows path"
         self.default_style = "QLabel { border: 2px dashed gray; }"
-
+        
+        self.update_image = lambda: None
         self.reset()
 
     def dragEnterEvent(self, event):
@@ -47,6 +49,7 @@ class ImageDropArea(QLabel):
             self.load_image()
             break
         event.accept()
+        self.update_image()
 
     def load_image(self):
         if self.image_path:
@@ -97,7 +100,7 @@ class ImageDropArea(QLabel):
                 words = text.split()
                 current_line = ""
                 for word in words:
-                    if len(current_line) + len(word) + 1 > 60:
+                    if len(current_line) + len(word) + 1 > 40:
                         lines.append(current_line.strip())
                         current_line = word
                     else:
@@ -209,6 +212,10 @@ class TestownikCreator(QMainWindow):
         self.left_layout = QVBoxLayout()
         self.left_widget.setLayout(self.left_layout)
         
+        self.import_button = QPushButton("Import test")
+        self.import_button.clicked.connect(self.import_test)
+        self.left_layout.addWidget(self.import_button)
+        
         self.question_list = QListWidget()
         self.add_question_button = QPushButton("New Question")
         self.left_layout.addWidget(self.question_list)
@@ -239,6 +246,7 @@ class TestownikCreator(QMainWindow):
         self.image_drop_area.setAlignment(Qt.AlignCenter)
         self.image_drop_area.setFixedWidth(200)
         self.image_drop_area.setMinimumHeight(100)
+        self.image_drop_area.update_image = self.update_answer_field
         image_layout.addWidget(self.image_drop_area)
 
         self.delete_button = QPushButton("Delete\nImage")
@@ -246,9 +254,13 @@ class TestownikCreator(QMainWindow):
         self.delete_button.setFixedWidth(50)
         self.delete_button.clicked.connect(self.image_drop_area.reset)
         image_layout.addWidget(self.delete_button)
-
-        self.similar_question_label = QLabel("")
-        self.similar_question_label.setStyleSheet("color: red;")
+        
+        self.similar_question_label = QTextBrowser()
+        self.similar_question_label.setReadOnly(True)
+        self.similar_question_label.setStyleSheet("background-color: transparent; border: none;")
+        self.similar_question_label.setHtml("")
+        self.similar_question_label.setFixedHeight(100)
+        
         image_layout.addWidget(self.similar_question_label)
 
         # Add the horizontal layout to the right layout
@@ -261,6 +273,7 @@ class TestownikCreator(QMainWindow):
         self.answer_container = QVBoxLayout()
         self.answer_container.setAlignment(Qt.AlignTop)
         self.right_layout.addLayout(self.answer_container)
+        self.right_layout.addStretch()
         
         self.answer_fields = []
         self.add_answer_field()
@@ -323,7 +336,7 @@ class TestownikCreator(QMainWindow):
                         correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"[:-1]
                         content.append(correct_line + "\n")  # Correct answers line
                         if image_name != '':
-                            content.append(f'[img]{image_name}[/img]')
+                            content.append(f'[img]{image_name}[/img] ')
                         content.append(f"{question}\n")  # The question itself
                         
                         # Process answers
@@ -375,19 +388,98 @@ class TestownikCreator(QMainWindow):
 
 
     def update_similar_question(self, current_question):
-        similar_question = ""
+        similar_questions = []
         for qid, data in self.questions_list.items():
             for question, _ in data.items():
-                if qid != self.question_no and string_similarity(current_question.lower(), question.lower()) >= similarity_limit:
-                    similar_question += f'\n    [{qid}]:{(question[:45] + "...") if len(question) > 45 else question}'
-                    # break
-            # if similar_question:
-            #     break
-        
-        if similar_question:
-            self.similar_question_label.setText(f"Question similar to:  {similar_question}")
+                if qid != self.question_no:
+                    similarity = string_similarity(current_question.lower(), question.lower())
+                    if similarity >= similarity_limit:
+                        similar_questions.append((qid, question, similarity))
+
+        if similar_questions:
+            html_output = "<p>Similar questions:</p><ul>"
+            for qid, question, similarity in similar_questions:
+                # Map similarity to a color between red and green
+                g = int(255 * (0.9-similarity**6))
+                color = f"rgb(255, {min(max(g,0),255)}, 0)"
+                
+                # Create a tooltip with the full question
+                
+                desc = question + '\n'
+                
+                for answer, correct in self.questions_list[qid][question]:
+                    desc += '☑' if correct else '☐'
+                    desc += answer.strip() + '\n'
+                
+                tooltip = f'<span title="{desc}">{question}</span>'
+                
+                html_output += f'<li style="color: {color};">[{qid}]: {tooltip}</li>'
+            html_output += "</ul>"
+            
+            
+            self.similar_question_label.setText(html_output)
         else:
             self.similar_question_label.setText("")
+
+
+    def import_test(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Import Test",
+            "",
+            "Zip Files (*.zip)"
+        )
+
+        if filename:
+            try:
+                self.import_from_zip(filename)
+            except Exception as e:
+                error_message = f"Error importing test: {str(e)}"
+                QMessageBox.critical(self, "Import Error", error_message)
+                traceback.print_exc(e)
+
+
+    def import_from_zip(self, filename):
+        self.questions_list.clear()
+        self.images.clear()
+        self.question_list.clear()
+
+        with zipfile.ZipFile(filename, 'r') as zip_ref:
+            for file_info in zip_ref.infolist():
+                if file_info.filename.endswith('.txt'):
+                    with zip_ref.open(file_info) as file:
+                        content = file.read().decode('utf-8').strip()
+                        lines = content.split('\n')
+                        if len(lines) < 3: continue
+                        
+                        # Extract correct answers
+                        correct_answers = []
+                        if lines[0].startswith('X'):
+                            correct_answers = [int(x) for x in (lines[0][1:]).strip()]
+                            
+                        # Find the question line
+                        if lines[1].startswith('[img]'):
+                            question = '!TO' + 'DO: ' + lines[1].split('img]')[-1]
+                        else:
+                            question = lines[1]
+                        # Extract answers
+                        answers = []
+                        for i, line in enumerate(lines[2:]):
+                            if line.strip():
+                                answers.append((line.strip(), (correct_answers[i] == 1) if (len(correct_answers) >= i+1) else False))
+                        # Add to questions_list
+                        question_id = len(self.questions_list) + 1
+                        self.questions_list[question_id] = {question: answers}
+                        
+                        # Add to question list widget
+                        self.question_list.addItem(f"{question_id}: {question}")
+
+        # Reset UI elements
+        self.clear_inputs()
+        self.question_no = 0
+        self.update_questions_dict()
+
+        QMessageBox.information(self, "Import Success", "Test imported successfully!")
 
 
     def update_answer_inputs(self):
@@ -453,6 +545,7 @@ class TestownikCreator(QMainWindow):
                     new_field = self.add_answer_field(answer, is_correct)
 
             self.update_similar_question(current.text())
+            self.update_answer_inputs()
         self.is_changing = False
 
 
