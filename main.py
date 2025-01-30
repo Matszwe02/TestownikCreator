@@ -316,6 +316,7 @@ class TestownikCreator(QMainWindow):
                 for question_number, question_data in self.questions_list.items():
                     for question, answers in question_data.items():
                         # Generate the content for the txt file
+                        if len(question) < 2 or len(answers) < 1: continue
                         
                         image_name = ''
                         
@@ -371,6 +372,8 @@ class TestownikCreator(QMainWindow):
 
             for question_number, question_data in self.questions_list.items():
                 for question, answers in question_data.items():
+                    if len(question) < 2 or len(answers) < 1: continue
+                    
                     correct_count = sum(corr for _, corr in answers)
                     quiz_data["questions"].append({
                         "question": question,
