@@ -1,0 +1,43 @@
+name: Release
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  QT_QPA_PLATFORM: offscreen 
+
+jobs:
+  build-windows:
+    name: build-windows
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Build application
+        working-directory: ./app
+        run: |
+          python main.py --build
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "stable"
+          tag_name: "1.0"
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+          files: |
+            ./dist/testownik-creator.exe
