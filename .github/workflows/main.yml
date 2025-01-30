@@ -27,7 +27,7 @@ jobs:
           pip install -r requirements.txt
 
       - name: Build application
-        working-directory: ./app
+        # working-directory: ./app
         run: |
           python main.py --build
 
