@@ -334,7 +334,7 @@ class TestownikCreator(QMainWindow):
                         
                         content = []
                         correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
-                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"[:-1]
+                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"
                         content.append(correct_line + "\n")  # Correct answers line
                         if image_name != '':
                             content.append(f'[img]{image_name}[/img] ')
