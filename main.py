@@ -318,49 +318,53 @@ class TestownikCreator(QMainWindow):
                 folder_name = os.path.basename(filename).split('.')[0]
 
                 for question_number, question_data in self.questions_list.items():
-                    for question, answers in question_data.items():
-                        # Generate the content for the txt file
-                        if len(question) < 2 or len(answers) < 1: continue
-                        
-                        image_name = ''
-                        
-                        if question_number in self.images:
-                            image_path = self.images[question_number]
-                            if os.path.exists(image_path):
-                                image_name = f"{question_number}.png"
-                                zip_file_name = os.path.join(folder_name, image_name)
-                                
-                                # Add text to image and write directly to zip
+                    question, answers = list(question_data.items())[0]
+                    
+                    # skip if question is empty or there are no answers, unless there is an image
+                    if (len(question) < 2 and question_number not in self.images) or len(answers) < 1: continue
+                    
+                    image_name = ''
+                    
+                    if question_number in self.images:
+                        image_path = self.images[question_number]
+                        if os.path.exists(image_path):
+                            image_name = f"{question_number}.png"
+                            zip_file_name = os.path.join(folder_name, image_name)
+                            
+                            # Add text to image and write directly to zip
+                            if question.strip() != '':  # Only add text if the question is not empty
                                 self.image_drop_area.image_path = image_path
                                 image_data = self.image_drop_area.add_text_to_image(question)
                                 self.image_drop_area.image_path = None
-                                if image_data:
-                                    zipf.writestr(zip_file_name, image_data)
+                            else:
+                                with open(image_path, 'rb') as f:
+                                    image_data = f.read()
+                            zipf.writestr(zip_file_name, image_data)
 
-                        num_answers = 0
-                        for answer, _ in answers:
-                            if answer.strip() != '':
-                                num_answers += 1
-                        
-                        content = []
-                        correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
-                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(num_answers))}"
-                        content.append(correct_line + "\n")  # Correct answers line
-                        if image_name != '':
-                            content.append(f'[img]{image_name}[/img] ')
-                        content.append(f"{question}\n")  # The question itself
-                        
-                        # Process answers
-                        for answer, _ in answers:
-                            if answer.strip() != '':
-                                content.append(f"{answer}\n")
-                        
-                        # Join the content and encode it
-                        file_content = "".join(content).encode('utf-8')
-                        
-                        # Write the content to the zip file
-                        zip_file_name = os.path.join(folder_name, f"{question_number}.txt")
-                        zipf.writestr(zip_file_name, file_content)
+                    num_answers = 0
+                    for answer, _ in answers:
+                        if answer.strip() != '':
+                            num_answers += 1
+                    
+                    content = []
+                    correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
+                    correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(num_answers))}"
+                    content.append(correct_line + "\n")  # Correct answers line
+                    if image_name != '':
+                        content.append(f'[img]{image_name}[/img] ')
+                    content.append(f"{question}\n")  # The question itself
+                    
+                    # Process answers
+                    for answer, _ in answers:
+                        if answer.strip() != '':
+                            content.append(f"{answer}\n")
+                    
+                    # Join the content and encode it
+                    file_content = "".join(content).encode('utf-8')
+                    
+                    # Write the content to the zip file
+                    zip_file_name = os.path.join(folder_name, f"{question_number}.txt")
+                    zipf.writestr(zip_file_name, file_content)
 
 
                 print(f"Zip file saved successfully: {filename}")
