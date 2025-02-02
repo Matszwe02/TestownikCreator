@@ -30,123 +30,179 @@ class ImageDropArea(QLabel):
         super().__init__()
         self.setAcceptDrops(True)
         self.pixmap = None
-        self.image_path = None
-        self.default_text = "Drag and drop image here\n only images from windows path"
+        self.pil_image = None
+        self.default_text = "Drag and drop image here"
         self.default_style = "QLabel { border: 2px dashed gray; }"
         
         self.update_image = lambda: None
         self.reset()
 
     def dragEnterEvent(self, event):
-        if event.mimeData().hasUrls():
+        mime_data = event.mimeData()
+        if mime_data.hasUrls() or mime_data.hasImage() or mime_data.hasFormat('image/png') or mime_data.hasFormat('image/jpeg'):
             event.accept()
         else:
             event.ignore()
 
     def dropEvent(self, event):
-        for url in event.mimeData().urls():
-            self.image_path = url.toLocalFile()
-            self.load_image()
-            break
+        mime_data = event.mimeData()
+        
+        if mime_data.hasUrls():
+            for url in mime_data.urls():
+                file_path = url.toLocalFile()
+                try:
+                    self.pil_image = Image.open(file_path)
+                    self.load_image()
+                    break
+                except Exception as e:
+                    print(f"Failed to load image from URL: {str(e)}")
+        elif mime_data.hasImage():
+            qimage = mime_data.imageData()
+            if qimage:
+                buffer = QBuffer()
+                buffer.open(QBuffer.ReadWrite)
+                qimage.save(buffer, "PNG")
+                buffer.seek(0)
+                try:
+                    self.pil_image = Image.open(io.BytesIO(buffer.data()))
+                    self.load_image()
+                except Exception as e:
+                    print(f"Failed to convert QImage to PIL Image: {str(e)}")
+        elif mime_data.hasFormat('image/png') or mime_data.hasFormat('image/jpeg'):
+            image_data = mime_data.data('image/png') if mime_data.hasFormat('image/png') else mime_data.data('image/jpeg')
+            try:
+                self.pil_image = Image.open(io.BytesIO(image_data))
+                self.load_image()
+            except Exception as e:
+                print(f"Failed to load image from raw data: {str(e)}")
+        
         event.accept()
         self.update_image()
 
     def load_image(self):
-        if self.image_path:
-            self.pixmap = QPixmap(self.image_path)
+        if self.pil_image:
+            # Convert PIL image to QPixmap
+            img_byte_arr = io.BytesIO()
+            self.pil_image.save(img_byte_arr, format='PNG')
+            img_byte_arr = img_byte_arr.getvalue()
+            
+            self.pixmap = QPixmap()
+            self.pixmap.loadFromData(img_byte_arr)
+            
             if not self.pixmap.isNull():
                 scaled_pixmap = self.pixmap.scaledToWidth(200)
                 self.setPixmap(scaled_pixmap)
                 self.setStyleSheet("")
             else:
-                print(f"Failed to load image from {self.image_path}")
+                print("Failed to convert PIL image to QPixmap")
                 self.reset()
+
 
     def reset(self):
         self.clear()
         self.setText(self.default_text)
         self.setStyleSheet(self.default_style)
-        self.image_path = None
         self.pixmap = None
+        self.pil_image = None
 
-    def get_image_path(self):
-        return self.image_path
+
+    def calculate_text_height(self, text, img_width):
+        """Calculate the height needed for text area based on image width and text content"""
+        try:
+            # Calculate font size based on image dimensions
+            font_size = max(20, min(img_width // 20, 60))
+            font = ImageFont.truetype("arial.ttf", font_size)
+            
+            # Wrap text if it's too long
+            lines = []
+            words = text.split()
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 > 40:
+                    lines.append(current_line.strip())
+                    current_line = word
+                else:
+                    current_line += " " + word if current_line else word
+            lines.append(current_line.strip())
+            
+            # Calculate height needed for text
+            return int(max(100, len(lines) * font_size * 1.3))
+        except Exception:
+            return 100  # Default height if calculation fails
 
     def add_text_to_image(self, text):
-        if self.image_path:
-            try:
-                # Open the image using Pillow
-                img = Image.open(self.image_path)
-                
-                
-                if img.width < image_size_limits[0] or img.height < image_size_limits[0]:
-                    scale_factor = max(image_size_limits[0] / img.width, image_size_limits[0] / img.height)
-                    new_width = int(img.width * scale_factor)
-                    new_height = int(img.height * scale_factor)
-                    img = img.resize((new_width, new_height))
-                    
-                if img.width > image_size_limits[1] or img.height > image_size_limits[1]:
-                    scale_factor = min(image_size_limits[1] / img.width, image_size_limits[1] / img.height)
-                    new_width = int(img.width * scale_factor)
-                    new_height = int(img.height * scale_factor)
-                    img = img.resize((new_width, new_height))
-                
-                # Calculate font size based on image dimensions
-                font_size = max(20, min(img.width // 20, img.height // 10))
-                
-                
-                # Wrap text if it's too long
-                lines = []
-                words = text.split()
-                current_line = ""
-                for word in words:
-                    if len(current_line) + len(word) + 1 > 40:
-                        lines.append(current_line.strip())
-                        current_line = word
-                    else:
-                        current_line += " " + word if current_line else word
-                lines.append(current_line.strip())
-                
-                pix_size = int(max(100, len(lines) * font_size * 1.3))
-                
-                # Create a new image with extra space at the top for text
-                total_height = img.height + pix_size  # Add pix_size pixels for text
-                new_img = Image.new('RGB', (img.width, total_height), color='white')
-                new_img.paste(img, (0, pix_size))  # Paste the original image below the text area
-                
-                # Create a drawing context
-                draw = ImageDraw.Draw(new_img)
-                
-                # Choose a font (you may need to adjust the font path)
-                font = ImageFont.truetype("arial.ttf", font_size)
-                
-                # Calculate text position
-                margin = 10
-                x = margin
-                y = margin
-                
-                
-                # Draw text on the image
-                for line in lines:
-                    draw.text((x, y), line, fill=(0, 0, 0), font=font)
-                    y += font.size + 5  # Assuming font.size gives the height of the text
-                
-                # Save the modified image to a BytesIO object
-                buffer = io.BytesIO()
-                new_img.save(buffer, format="PNG")
-                buffer.seek(0)
-                
-                return buffer.getvalue()
+        try:
+            img = self.pil_image.copy()
             
-            except Exception as e:
-                error_message = f"Error adding text to image: {str(e)}"
-                QMessageBox.critical(self.parent(), "Image Processing Error", error_message)
-                return None
-        else:
-            error_message = f"Error reading image"
+            if img.width < image_size_limits[0] or img.height < image_size_limits[0]:
+                scale_factor = max(image_size_limits[0] / img.width, image_size_limits[0] / img.height)
+                new_width = int(img.width * scale_factor)
+                new_height = int(img.height * scale_factor)
+                img = img.resize((new_width, new_height))
+                
+            if img.width > image_size_limits[1] or img.height > image_size_limits[1]:
+                scale_factor = min(image_size_limits[1] / img.width, image_size_limits[1] / img.height)
+                new_width = int(img.width * scale_factor)
+                new_height = int(img.height * scale_factor)
+                img = img.resize((new_width, new_height))
+            
+            # Calculate font size and text height
+            font_size = max(20, min(img.width // 20, img.height // 10))
+            font = ImageFont.truetype("arial.ttf", font_size)
+            text_height = self.calculate_text_height(text, img.width)
+            
+            # Create a new image with extra space at the top for text
+            total_height = img.height + text_height
+            new_img = Image.new('RGB', (img.width, total_height), color='white')
+            new_img.paste(img, (0, text_height))
+            
+            # Create a drawing context
+            draw = ImageDraw.Draw(new_img)
+            
+            # Wrap and draw text
+            lines = []
+            words = text.split()
+            current_line = ""
+            for word in words:
+                if len(current_line) + len(word) + 1 > 40:
+                    lines.append(current_line.strip())
+                    current_line = word
+                else:
+                    current_line += " " + word if current_line else word
+            lines.append(current_line.strip())
+            
+            # Draw text
+            margin = 10
+            x = margin
+            y = margin
+            for line in lines:
+                draw.text((x, y), line, fill=(0, 0, 0), font=font)
+                y += font.size + 5
+            
+            # Save the modified image
+            buffer = io.BytesIO()
+            new_img.save(buffer, format="PNG")
+            buffer.seek(0)
+            
+            return buffer.getvalue()
+        
+        except Exception as e:
+            error_message = f"Error adding text to image: {str(e)}"
             QMessageBox.critical(self.parent(), "Image Processing Error", error_message)
             return None
-        return None
+
+    def remove_text_area(self, image, text):
+        """Remove the text area from an image that was previously added with add_text_to_image"""
+        try:
+            # Calculate the height of text area that was added
+            text_height = self.calculate_text_height(text, image.width)
+            
+            # Crop the image to remove the text area
+            return image.crop((0, text_height, image.width, image.height))
+        except Exception as e:
+            print(f"Error removing text area: {str(e)}")
+            return image
+
 
 
 class ExportDialog(QDialog):
@@ -256,7 +312,7 @@ class TestownikCreator(QMainWindow):
         self.delete_button = QPushButton("Delete\nImage")
         self.delete_button.setFixedHeight(50)
         self.delete_button.setFixedWidth(50)
-        self.delete_button.clicked.connect(self.image_drop_area.reset)
+        self.delete_button.clicked.connect(self.delete_image)
         image_layout.addWidget(self.delete_button)
         
         self.similar_question_label = QTextBrowser()
@@ -326,20 +382,24 @@ class TestownikCreator(QMainWindow):
                     image_name = ''
                     
                     if question_number in self.images:
-                        image_path = self.images[question_number]
-                        if os.path.exists(image_path):
-                            image_name = f"{question_number}.png"
-                            zip_file_name = os.path.join(folder_name, image_name)
-                            
-                            # Add text to image and write directly to zip
-                            if question.strip() != '':  # Only add text if the question is not empty
-                                self.image_drop_area.image_path = image_path
-                                image_data = self.image_drop_area.add_text_to_image(question)
-                                self.image_drop_area.image_path = None
-                            else:
-                                with open(image_path, 'rb') as f:
-                                    image_data = f.read()
-                            zipf.writestr(zip_file_name, image_data)
+                        image = self.images[question_number]
+                        
+                        image_name = f"{question_number}.png"
+                        zip_file_name = os.path.join(folder_name, image_name)
+                        
+                        # Add text to image and write directly to zip
+                        if question.strip() != '':  # Only add text if the question is not empty
+                            self.image_drop_area.pil_image = image
+                            image_data = self.image_drop_area.add_text_to_image(question)
+                            self.image_drop_area.pil_image = None
+                        else:
+                            # Save image without text
+                            buffer = io.BytesIO()
+                            image.save(buffer, format='PNG')
+                            image_data = buffer.getvalue()
+                            buffer.close()
+                        
+                        zipf.writestr(zip_file_name, image_data)
 
                     num_answers = 0
                     for answer, _ in answers:
@@ -463,34 +523,60 @@ class TestownikCreator(QMainWindow):
         self.question_list.clear()
 
         with zipfile.ZipFile(filename, 'r') as zip_ref:
+            # First pass: Process text files to get questions and answers
             for file_info in zip_ref.infolist():
                 if file_info.filename.endswith('.txt'):
-                    with zip_ref.open(file_info) as file:
-                        content = file.read().decode('utf-8').strip()
-                        lines = content.split('\n')
-                        if len(lines) < 3: continue
+                    try:
+                        # Get question ID from filename (assuming format like "1.txt")
+                        base_name = os.path.basename(file_info.filename)
+                        question_id = int(os.path.splitext(base_name)[0])
                         
-                        # Extract correct answers
-                        correct_answers = []
-                        if lines[0].startswith('X'):
-                            correct_answers = [int(x) for x in (lines[0][1:]).strip()]
+                        with zip_ref.open(file_info) as file:
+                            content = file.read().decode('utf-8').strip()
+                            lines = content.split('\n')
+                            if len(lines) < 3: continue
                             
-                        # Find the question line
-                        if lines[1].startswith('[img]'):
-                            question = '!TO' + 'DO: ' + lines[1].split('img]')[-1]
-                        else:
-                            question = lines[1]
-                        # Extract answers
-                        answers = []
-                        for i, line in enumerate(lines[2:]):
-                            if line.strip():
-                                answers.append((line.strip(), (correct_answers[i] == 1) if (len(correct_answers) >= i+1) else False))
-                        # Add to questions_list
-                        question_id = len(self.questions_list) + 1
-                        self.questions_list[question_id] = {question: answers}
+                            # Extract correct answers
+                            correct_answers = []
+                            if lines[0].startswith('X'):
+                                correct_answers = [int(x) for x in (lines[0][1:]).strip()]
+                            
+                            # Find the question line and check for image reference
+                            question = lines[1].split('[/img]')[-1].strip()
+                            
+                            # Extract answers
+                            answers = []
+                            for i, line in enumerate(lines[2:]):
+                                if line.strip():
+                                    answers.append((line.strip(), (correct_answers[i] == 1) if (len(correct_answers) >= i+1) else False))
+                            
+                            self.questions_list[question_id] = {question: answers}
+                            self.question_list.addItem(f"{question_id}: {question}")
+                    except Exception as e:
+                        print(f"Error processing text file {file_info.filename}: {str(e)}")
+            
+            # Second pass: Process image files
+            for file_info in zip_ref.infolist():
+                if file_info.filename.lower().endswith(('.png', '.jpg', '.jpeg', '.gif')):
+                    try:
+                        # Get question ID from filename (assuming format like "1.png")
+                        base_name = os.path.basename(file_info.filename)
+                        question_id = int(os.path.splitext(base_name)[0])
                         
-                        # Add to question list widget
-                        self.question_list.addItem(f"{question_id}: {question}")
+                        # Read image data and create PIL Image
+                        with zip_ref.open(file_info) as image_file:
+                            image_data = image_file.read()
+                            image = Image.open(io.BytesIO(image_data))
+                            
+                            # If this question has text, remove the text area from the image
+                            if question_id in self.questions_list:
+                                question = list(self.questions_list[question_id].keys())[0]
+                                if question.strip():
+                                    image = self.image_drop_area.remove_text_area(image, question)
+                            
+                            self.images[question_id] = image
+                    except Exception as e:
+                        print(f"Error processing image {file_info.filename}: {str(e)}")
 
         # Reset UI elements
         self.clear_inputs()
@@ -527,6 +613,11 @@ class TestownikCreator(QMainWindow):
         return new_field
 
 
+    def delete_image(self):
+        self.image_drop_area.reset()
+        self.update_answer_field()
+
+
     def select_question(self, current, previous):
         self.is_changing = True
         if current:
@@ -541,13 +632,9 @@ class TestownikCreator(QMainWindow):
                 
                 
                 if question_id in self.images:
-                    image_path = self.images[question_id]
-                    if os.path.exists(image_path):
-                        self.image_drop_area.image_path = image_path
-                        self.image_drop_area.load_image()
-                    else:
-                        del self.images[question_id]
-                        self.image_drop_area.reset()
+                    image = self.images[question_id]
+                    self.image_drop_area.pil_image = image
+                    self.image_drop_area.load_image()
                 else:
                     self.image_drop_area.reset()
 
@@ -590,8 +677,10 @@ class TestownikCreator(QMainWindow):
             for q, answers in value.items():
                 self.question_list.addItem(f"{key}: {q}")
         
-        if self.image_drop_area.image_path:
-            self.images[self.question_no] = self.image_drop_area.image_path
+        if self.image_drop_area.pil_image:
+            self.images[self.question_no] = self.image_drop_area.pil_image
+        elif self.question_no in self.images:
+            del self.images[self.question_no]
         
         self.update_similar_question(question)
     
