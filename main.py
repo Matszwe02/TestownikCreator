@@ -142,6 +142,10 @@ class ImageDropArea(QLabel):
                 error_message = f"Error adding text to image: {str(e)}"
                 QMessageBox.critical(self.parent(), "Image Processing Error", error_message)
                 return None
+        else:
+            error_message = f"Error reading image"
+            QMessageBox.critical(self.parent(), "Image Processing Error", error_message)
+            return None
         return None
 
 
@@ -327,14 +331,20 @@ class TestownikCreator(QMainWindow):
                                 zip_file_name = os.path.join(folder_name, image_name)
                                 
                                 # Add text to image and write directly to zip
+                                self.image_drop_area.image_path = image_path
                                 image_data = self.image_drop_area.add_text_to_image(question)
+                                self.image_drop_area.image_path = None
                                 if image_data:
                                     zipf.writestr(zip_file_name, image_data)
 
+                        num_answers = 0
+                        for answer, _ in answers:
+                            if answer.strip() != '':
+                                num_answers += 1
                         
                         content = []
                         correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
-                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(len(answers)))}"
+                        correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(num_answers))}"
                         content.append(correct_line + "\n")  # Correct answers line
                         if image_name != '':
                             content.append(f'[img]{image_name}[/img] ')
@@ -342,7 +352,8 @@ class TestownikCreator(QMainWindow):
                         
                         # Process answers
                         for answer, _ in answers:
-                            content.append(f"{answer}\n")
+                            if answer.strip() != '':
+                                content.append(f"{answer}\n")
                         
                         # Join the content and encode it
                         file_content = "".join(content).encode('utf-8')
@@ -494,6 +505,9 @@ class TestownikCreator(QMainWindow):
         
         if self.answer_fields and self.answer_fields[-1].text_edit.text().strip():
             self.add_answer_field()
+        elif not self.answer_fields:
+            self.add_answer_field()
+
 
     def update_answer_field(self):
         self.update_answer_inputs()
@@ -562,8 +576,8 @@ class TestownikCreator(QMainWindow):
     def update_questions_dict(self):
         if self.is_changing: return
         
-        question = self.question_input.text()
-        answers = [(field.text_edit.text(), field.checkbox.isChecked()) for field in self.answer_fields]
+        question = self.question_input.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', '')
+        answers = [(field.text_edit.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', ''), field.checkbox.isChecked()) for field in self.answer_fields]
         
         self.questions_list[self.question_no] = {question: answers}
         
