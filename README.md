@@ -6,6 +6,7 @@ Question creator app for Testownik
 - Exports .zip and .json
 - warns about duplicate questions
 - supports uploading images
-- imports tests for modification (importing doesn't support images!)
+- adds text to images (testownik app doesn't display text by default in these cases)
+- imports tests for modification
 
 ![image](.github/image.png)
