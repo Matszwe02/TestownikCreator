@@ -604,10 +604,8 @@ class TestownikCreator(QMainWindow):
                     except Exception as e:
                         print(f"Error processing image {file_info.filename}: {str(e)}")
 
-        # Reset UI elements
-        self.clear_inputs()
-        self.question_no = 0
-        self.update_questions_dict()
+        self.question_no = list(self.questions_list.keys())[0] or 0
+        self.update_question_list()
 
         QMessageBox.information(self, "Import Success", "Test imported successfully!")
 
@@ -783,6 +781,7 @@ class TestownikCreator(QMainWindow):
 
 
     def clear_inputs(self):
+        self.is_changing = True
         self.question_input.setText("")
         for field in self.answer_fields:
             field.text_edit.clear()
@@ -797,6 +796,7 @@ class TestownikCreator(QMainWindow):
 
         if self.question_no in self.images:
             del self.images[self.question_no]
+        self.is_changing = False
 
     # def save_to_json(self):
         
