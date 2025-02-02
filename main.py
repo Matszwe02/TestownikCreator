@@ -1,7 +1,7 @@
 import os, sys, subprocess, shlex, zipfile, traceback
 
 from PySide6.QtWidgets import *
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QBuffer
 from PySide6.QtGui import QIcon, QPixmap
 
 from PIL import Image, ImageDraw, ImageFont
@@ -31,11 +31,37 @@ class ImageDropArea(QLabel):
         self.setAcceptDrops(True)
         self.pixmap = None
         self.pil_image = None
-        self.default_text = "Drag and drop image here"
+        self.default_text = "Drag and drop image here\nor press Ctrl+V to paste"
         self.default_style = "QLabel { border: 2px dashed gray; }"
         
         self.update_image = lambda: None
         self.reset()
+        
+        # Enable focus to receive key events
+        self.setFocusPolicy(Qt.StrongFocus)
+
+    def keyPressEvent(self, event):
+        # Check for Ctrl+V
+        if event.key() == Qt.Key_V and event.modifiers() == Qt.ControlModifier:
+            clipboard = QApplication.clipboard()
+            mime_data = clipboard.mimeData()
+            
+            if mime_data.hasImage():
+                qimage = clipboard.image()
+                if not qimage.isNull():
+                    # Convert QImage to PIL Image
+                    buffer = QBuffer()
+                    buffer.open(QBuffer.ReadWrite)
+                    qimage.save(buffer, "PNG")
+                    buffer.seek(0)
+                    try:
+                        self.pil_image = Image.open(io.BytesIO(buffer.data()))
+                        self.load_image()
+                        self.update_image()
+                    except Exception as e:
+                        print(f"Failed to convert clipboard image: {str(e)}")
+                    finally:
+                        buffer.close()
 
     def dragEnterEvent(self, event):
         mime_data = event.mimeData()
