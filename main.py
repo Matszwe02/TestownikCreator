@@ -538,9 +538,9 @@ class TestownikCreator(QMainWindow):
             try:
                 self.import_from_zip(filename)
             except Exception as e:
-                error_message = f"Error importing test: {str(e)}"
+                error_message = f"Error importing test: {traceback.format_exc()}"
                 QMessageBox.critical(self, "Import Error", error_message)
-                traceback.print_exc(e)
+                traceback.print_exc()
 
 
     def import_from_zip(self, filename):
@@ -577,7 +577,7 @@ class TestownikCreator(QMainWindow):
                                     answers.append((line.strip(), (correct_answers[i] == 1) if (len(correct_answers) >= i+1) else False))
                             
                             self.questions_list[question_id] = {question: answers}
-                            self.question_list.addItem(f"{question_id}: {question}")
+                            # self.question_list.addItem(f"{question_id}: {question}")
                     except Exception as e:
                         print(f"Error processing text file {file_info.filename}: {str(e)}")
             
@@ -690,6 +690,42 @@ class TestownikCreator(QMainWindow):
         self.question_list.currentItemChanged.connect(self.select_question)
 
 
+    def update_question_item(self, item: QListWidgetItem, key, question, answers):
+        item.setText(f"{key}: {'🗎 ' if key in self.images.keys() else ''}{question}")
+        desc = question + '\n'
+        for answer, correct in answers:
+            desc += '☑' if correct else '☐'
+            desc += answer.strip() + '\n'
+        item.setToolTip(desc)
+        return item
+
+
+    def update_question_list(self):
+        if self.question_list.count() != len(self.questions_list):
+            self.question_list.clear()
+            for key, value in self.questions_list.items():
+                for question, answers in value.items():
+                    self.question_list.addItem(self.update_question_item(QListWidgetItem(), key, question, answers))
+        else:
+            for i in range(self.question_list.count()):
+                item = self.question_list.item(i)
+                key = int(item.text().split(':')[0])
+                question = list(self.questions_list[key].keys())[0]
+                answers = list(self.questions_list[key].values())[0]
+                self.update_question_item(item, key, question, answers)
+
+
+    def ensure_question_selected(self):
+        """Ensure the current question is selected in the question list"""
+        if self.question_no > 0:
+            # Find and select the item with the current question number
+            for i in range(self.question_list.count()):
+                item = self.question_list.item(i)
+                if int(item.text().split(':')[0]) == self.question_no:
+                    self.question_list.setCurrentItem(item)
+                    break
+
+
     def update_questions_dict(self):
         if self.is_changing: return
         
@@ -698,10 +734,7 @@ class TestownikCreator(QMainWindow):
         
         self.questions_list[self.question_no] = {question: answers}
         
-        self.question_list.clear()
-        for key, value in self.questions_list.items():
-            for q, answers in value.items():
-                self.question_list.addItem(f"{key}: {q}")
+        self.update_question_list()
         
         if self.image_drop_area.pil_image:
             self.images[self.question_no] = self.image_drop_area.pil_image
@@ -709,6 +742,7 @@ class TestownikCreator(QMainWindow):
             del self.images[self.question_no]
         
         self.update_similar_question(question)
+        self.ensure_question_selected()
     
 
 
@@ -723,10 +757,7 @@ class TestownikCreator(QMainWindow):
         self.question_hint.setText(f"Enter your question: [{self.question_no}]")
         self.is_changing = False
         
-        self.question_list.clear()
-        for key, value in self.questions_list.items():
-            for question, answers in value.items():
-                self.question_list.addItem(f"{key}: {question}")
+        self.update_question_list()
 
 
     def add_question_to_list(self):
@@ -743,12 +774,7 @@ class TestownikCreator(QMainWindow):
         self.question_hint.setText(f"Enter your question: [{self.question_no}]")
         # Add the new question to questions_list
         self.questions_list[self.question_no] = {question: answers}
-        
-        # Update the display of questions_list
-        self.question_list.clear()
-        for key, value in self.questions_list.items():
-            for question, answers in value.items():
-                self.question_list.addItem(f"{key}: {question}")
+        self.update_question_list()
         
         # Clear inputs
         self.clear_inputs()
