@@ -558,8 +558,16 @@ class TestownikCreator(QMainWindow):
                         question_id = int(os.path.splitext(base_name)[0])
                         
                         with zip_ref.open(file_info) as file:
-                            content = file.read().decode('utf-8').strip()
-                            lines = content.split('\n')
+                            # Try to decode with utf-8 and fallback to iso-8859-1
+                            content = file.read()
+                            try:
+                                decoded_content = content.decode('utf-8').strip()
+                            except UnicodeDecodeError:
+                                try:
+                                    decoded_content = content.decode('windows-1250').strip()
+                                except UnicodeDecodeError:
+                                    decoded_content = content.decode('iso-8859-1').strip()
+                            lines = decoded_content.split('\n')
                             if len(lines) < 3: continue
                             
                             # Extract correct answers
