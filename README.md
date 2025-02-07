@@ -9,6 +9,6 @@ Question creator app for Testownik
 - supports uploading images
 - adds text to images (testownik app doesn't display text by default in these cases)
 - imports tests for modification
-- ai auto fill incorrect answers
+- ai auto add incorrect answers
 
 ![image](.github/image.png)
