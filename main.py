@@ -1,7 +1,7 @@
 import os, sys, subprocess, shlex, zipfile, traceback
 
 from PySide6.QtWidgets import *
-from PySide6.QtCore import Qt, QBuffer
+from PySide6.QtCore import Qt, QBuffer, QTimer
 from PySide6.QtGui import QIcon, QPixmap
 
 from PIL import Image, ImageDraw, ImageFont
@@ -9,10 +9,10 @@ import io
 
 import math
 import json
-
+from llm import LLM
 import resources_rc
 # pyside6-rcc resources.qrc -o resources_rc.py
-
+from threading import Thread
 from difflib import SequenceMatcher
 
 
@@ -275,6 +275,58 @@ class AnswerField(QWidget):
         self.checkbox.stateChanged.connect(function)
 
 
+class SettingsDialog(QDialog):
+    def __init__(self, llm):
+        super().__init__()
+        self.setWindowTitle("Settings")
+        self.llm = llm
+        self.layout = QVBoxLayout()
+        self.setLayout(self.layout)
+        
+        self.llm_group = QGroupBox("LLM Answer Fill Settings")
+        self.llm_layout = QVBoxLayout()
+        self.llm_group.setLayout(self.llm_layout)
+        
+        self.url_label = QLabel("API URL:")
+        self.url_input = QLineEdit(self.llm.url)
+        self.key_label = QLabel("API Key:")
+        self.key_input = QLineEdit(self.llm.key)
+        self.model_label = QLabel("Model:")
+        self.model_input = QLineEdit(self.llm.model)
+        self.count_label = QLabel("Answer count:")
+        self.count_input = QLineEdit(self.llm.count)
+        
+        self.llm_layout.addWidget(self.url_label)
+        self.llm_layout.addWidget(self.url_input)
+        self.llm_layout.addWidget(self.key_label)
+        self.llm_layout.addWidget(self.key_input)
+        self.llm_layout.addWidget(self.model_label)
+        self.llm_layout.addWidget(self.model_input)
+        self.llm_layout.addWidget(self.count_label)
+        self.llm_layout.addWidget(self.count_input)
+        
+        self.layout.addWidget(self.llm_group)
+        
+        self.button_box = QHBoxLayout()
+        self.ok_button = QPushButton("OK")
+        self.cancel_button = QPushButton("Cancel")
+        self.button_box.addWidget(self.ok_button)
+        self.button_box.addWidget(self.cancel_button)
+        self.layout.addLayout(self.button_box)
+        
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+
+    def accept(self):
+        self.llm.url = self.url_input.text().strip()
+        self.llm.key = self.key_input.text().strip()
+        self.llm.model = self.model_input.text().strip()
+        self.llm.count = self.count_input.text().strip()
+        self.llm.save_json()
+        super().accept()
+
+
+
 class TestownikCreator(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -285,6 +337,11 @@ class TestownikCreator(QMainWindow):
         self.question_no = 0
         self.is_changing = False
         self.images = {}
+        self.llm = LLM()
+        self.llm.load_json()
+        
+        
+        
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -297,6 +354,13 @@ class TestownikCreator(QMainWindow):
         self.left_widget.setMaximumWidth(200)
         self.left_layout = QVBoxLayout()
         self.left_widget.setLayout(self.left_layout)
+        
+        
+        # Add settings action
+        self.settings_action = QPushButton("Settings")
+        self.settings_action.clicked.connect(self.show_settings)
+        self.left_layout.addWidget(self.settings_action)
+        
         
         self.import_button = QPushButton("Import test")
         self.import_button.clicked.connect(self.import_test)
@@ -349,9 +413,14 @@ class TestownikCreator(QMainWindow):
         
         image_layout.addWidget(self.similar_question_label)
 
+        # Add LLM fill button
+        self.llm_fill_button = QPushButton("✨")
+        self.llm_fill_button.setFixedSize(30, 30)
+        self.llm_fill_button.clicked.connect(self.llm_click)
+        image_layout.addWidget(self.llm_fill_button)
+        
         # Add the horizontal layout to the right layout
         self.right_layout.addLayout(image_layout)
-
 
         self.answer_hint = QLabel("Enter answers:")
         self.right_layout.addWidget(self.answer_hint)
@@ -368,6 +437,77 @@ class TestownikCreator(QMainWindow):
         self.layout.addLayout(self.right_layout)
         
         self.connect_signals()
+
+
+    def _check_llm_status(self):
+        if self.llm_status:
+            print(self.llm_status)
+            self.polling_timer.stop()
+            self.reselect_question()
+            self.llm_fill_button.setText('✨')
+        if type(self.llm_status) != str: return
+        if self.llm_status == "Please enter a question first":
+            QMessageBox.warning(self, "Warning", "Please enter a question first")
+        else:
+            QMessageBox.warning(self, "LLM Error", self.llm_status)
+            
+
+    def llm_click(self):
+        self.llm_status = False
+        self.llm_fill_button.setText('💭')
+        
+        self.llm_thread = Thread(target=self.fill_answers_with_llm)
+        self.llm_thread.start()
+        
+        self.polling_timer = QTimer(self)
+        self.polling_timer.timeout.connect(self._check_llm_status)
+        self.polling_timer.start(100)  # Check every 100ms
+
+
+    def fill_answers_with_llm(self):
+        """Generate answers using the LLM"""
+        if not self.question_input.text().strip():
+            self.llm_status = "Please enter a question first, and one correct answer"
+            return
+        try:
+            question = list(self.questions_list[self.question_no].keys())[0]
+            answers_list: list = self.questions_list[self.question_no][question]
+            if len(answers_list) == 0 or answers_list[0][0] == '':
+                self.llm_status = "Please enter a question first, and one correct answer"
+                return
+            answers = self.llm.generate_answers(question, answers_list[0][0])
+            
+            is_true = False
+            for index, i in enumerate(answers_list):
+                if i[0] == '' and index + 1 == len(answers_list):
+                    answers_list.pop(index)
+                if i[1]: is_true = True
+            if not is_true: answers_list[0] = (answers_list[0][0], True)
+            for answer in answers:
+                answers_list.append((answer, False))
+            
+            
+        except Exception as e:
+            self.llm_status = traceback.format_exc()
+            return
+        self.llm_status = True
+
+
+    def show_settings(self):
+        """Display and edit settings"""
+        dialog = SettingsDialog(self.llm)
+        if dialog.exec():
+            QMessageBox.information(self, "Settings Saved", "Settings have been saved")
+
+
+    def reselect_question(self):
+        
+        self.is_changing = True
+        for i in range(self.question_list.count()):
+            item = self.question_list.item(i)
+            if int(item.text().split(':')[0]) == self.question_no:
+                self.select_question(item)
+        self.is_changing = False
 
 
     def download_file(self):
@@ -650,7 +790,7 @@ class TestownikCreator(QMainWindow):
         self.update_answer_field()
 
 
-    def select_question(self, current, previous):
+    def select_question(self, current, previous = 0):
         self.is_changing = True
         if current:
             selected_text = current.text()
