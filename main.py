@@ -25,6 +25,12 @@ def string_similarity(a, b):
 
 
 
+def strip_answers_list(answers_list: list[tuple[str, bool]]):
+    if len(answers_list) > 0:
+        if answers_list[-1][0] == '':
+            answers_list.remove(answers_list[-1])
+
+
 class ImageDropArea(QLabel):
     def __init__(self):
         super().__init__()
@@ -441,7 +447,6 @@ class TestownikCreator(QMainWindow):
 
     def _check_llm_status(self):
         if self.llm_status:
-            print(self.llm_status)
             self.polling_timer.stop()
             self.reselect_question()
             self.llm_fill_button.setText('✨')
@@ -472,15 +477,15 @@ class TestownikCreator(QMainWindow):
         try:
             question = list(self.questions_list[self.question_no].keys())[0]
             answers_list: list = self.questions_list[self.question_no][question]
-            if len(answers_list) == 0 or answers_list[0][0] == '':
+            strip_answers_list(answers_list)
+            
+            if len(answers_list) != 1:
                 self.llm_status = "Please enter a question first, and one correct answer"
                 return
             answers = self.llm.generate_answers(question, answers_list[0][0])
             
             is_true = False
             for index, i in enumerate(answers_list):
-                if i[0] == '' and index + 1 == len(answers_list):
-                    answers_list.pop(index)
                 if i[1]: is_true = True
             if not is_true: answers_list[0] = (answers_list[0][0], True)
             for answer in answers:
@@ -506,7 +511,7 @@ class TestownikCreator(QMainWindow):
         for i in range(self.question_list.count()):
             item = self.question_list.item(i)
             if int(item.text().split(':')[0]) == self.question_no:
-                self.select_question(item)
+                self.select_question(item, force = True)
         self.is_changing = False
 
 
@@ -790,7 +795,8 @@ class TestownikCreator(QMainWindow):
         self.update_answer_field()
 
 
-    def select_question(self, current, previous = 0):
+    def select_question(self, current, previous = 0, force=False):
+        if self.is_changing and not force: return
         self.is_changing = True
         if current:
             selected_text = current.text()
@@ -861,17 +867,6 @@ class TestownikCreator(QMainWindow):
                 self.update_question_item(item, key, question, answers)
 
 
-    def ensure_question_selected(self):
-        """Ensure the current question is selected in the question list"""
-        if self.question_no > 0:
-            # Find and select the item with the current question number
-            for i in range(self.question_list.count()):
-                item = self.question_list.item(i)
-                if int(item.text().split(':')[0]) == self.question_no:
-                    self.question_list.setCurrentItem(item)
-                    break
-
-
     def update_questions_dict(self):
         if self.is_changing: return
         
@@ -879,7 +874,6 @@ class TestownikCreator(QMainWindow):
         answers = [(field.text_edit.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', ''), field.checkbox.isChecked()) for field in self.answer_fields]
         
         self.questions_list[self.question_no] = {question: answers}
-        
         self.update_question_list()
         
         if self.image_drop_area.pil_image:
@@ -888,8 +882,6 @@ class TestownikCreator(QMainWindow):
             del self.images[self.question_no]
         
         self.update_similar_question(question)
-        self.ensure_question_selected()
-    
 
 
     def remove_question(self):

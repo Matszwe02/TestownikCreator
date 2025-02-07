@@ -8,24 +8,23 @@ class LLM():
         self.url = ''
         self.key = ''
         self.model = ''
-        if not os.path.exists('config.json'):
-            with open('config.json', 'w') as f:
-                f.write('{}')
 
 
     def load_json(self):
-        with open('config.json', 'r') as f:
-            config = json.load(f)
-        self.url = config.get('url', '')
-        self.key = config.get('key', '')
-        self.model = config.get('model', '')
-        self.count = config.get('count', '0')
+        try:
+            with open('config.json', 'r') as f:
+                config = json.load(f)
+            self.url = config.get('url', '')
+            self.key = config.get('key', '')
+            self.model = config.get('model', '')
+            self.count = config.get('count', '0')
+        except: pass
 
 
     def save_json(self):
         """Save API configuration to file"""
         if not self.url or not self.key or not self.model:
-            raise ValueError("All API settings must be filled")
+            raise ValueError("Provide LLM API settings first!")
             
         try:
             with open('config.json', 'r') as f:
