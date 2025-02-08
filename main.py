@@ -472,22 +472,26 @@ class TestownikCreator(QMainWindow):
     def fill_answers_with_llm(self):
         """Generate answers using the LLM"""
         if not self.question_input.text().strip():
-            self.llm_status = "Please enter a question first, and one correct answer"
+            self.llm_status = "Please enter a question first, and at least one answer"
             return
         try:
             question = list(self.questions_list[self.question_no].keys())[0]
             answers_list: list = self.questions_list[self.question_no][question]
             strip_answers_list(answers_list)
             
-            if len(answers_list) != 1:
-                self.llm_status = "Please enter a question first, and one correct answer"
+            if len(answers_list) < 1:
+                self.llm_status = "Please enter a question first, and at least one answer"
                 return
-            answers = self.llm.generate_answers(question, answers_list[0][0])
             
             is_true = False
             for index, i in enumerate(answers_list):
                 if i[1]: is_true = True
-            if not is_true: answers_list[0] = (answers_list[0][0], True)
+            if not is_true:
+                for i in range(len(answers_list)):
+                    answers_list[i] = (answers_list[i][0], True)
+            
+            answers = self.llm.generate_answers(question, answers_list)
+            
             for answer in answers:
                 answers_list.append((answer, False))
             
@@ -579,6 +583,9 @@ class TestownikCreator(QMainWindow):
                     
                     content = []
                     correct_answers = [i for i, (_, is_correct) in enumerate(answers) if is_correct]
+                    if len(correct_answers) == 0:
+                        raise ValueError(f'Question [{question_number}] ({question}) contains no correct answers!')
+                    
                     correct_line = f"X{''.join(str(int(i in correct_answers)) for i in range(num_answers))}"
                     content.append(correct_line + "\n")  # Correct answers line
                     if image_name != '':
@@ -871,7 +878,7 @@ class TestownikCreator(QMainWindow):
         if self.is_changing: return
         
         question = self.question_input.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', '')
-        answers = [(field.text_edit.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', ''), field.checkbox.isChecked()) for field in self.answer_fields]
+        answers = [(field.text_edit.text().lstrip('•').strip().replace('\n', ' ').replace('\t', '  ').replace('\r', ''), field.checkbox.isChecked()) for field in self.answer_fields]
         
         self.questions_list[self.question_no] = {question: answers}
         self.update_question_list()

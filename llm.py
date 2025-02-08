@@ -40,15 +40,19 @@ class LLM():
             raise RuntimeError(f"Failed to save configuration: {str(e)}")
 
 
-    def generate_answers(self, question, answer):
+    def generate_answers(self, question, input_answers: list[tuple[str, bool]]):
         # Initialize OpenAI client
         client = openai.Client(api_key=self.key, base_url=self.url)
         
         # Create system prompt
-        system_prompt = f"""You are a helpful assistant helping user to create a quiz. Respond in the same language as the user's question. User will provide to you quiz question and a correct answer. Provide a list of incorrect answers to fill into the quiz. Make all of the answers believable, keep all of them in topic. Format your answers as a list of items, each starting with "- ", and enclose all answers within triple backticks (```). Generate {self.count} new answers"""
+        system_prompt = f"""You are a helpful assistant helping user to create a quiz. Respond in the same language as the user's question. User will provide to you quiz question and a list of answers marked as [v] correct and [x] incorrect. Provide a list of incorrect answers to add to the quiz. Make all of the answers believable, keep all of them in topic. Format your answers as a list of items, each starting with "[x] ", and enclose all answers within triple backticks (```). Generate {self.count} new answers"""
         
         # Create user prompt
-        user_prompt = f"# {question}\n\n```\n- {answer}\n```\n"
+        
+        user_prompt = f"# {question}\n\n```\n"
+        for answer in input_answers:
+            user_prompt += f"[{'v' if answer[1] else 'x'}] {answer[0]}\n"
+        user_prompt += "\n```\n"
         
         # Generate answers using API
         answers = []
@@ -75,7 +79,7 @@ class LLM():
         # Split answers by lines starting with "- "
         for line in inner_content.split('\n'):
             line = line.strip()
-            if line.startswith('- '):
-                answers.append(line[2:].strip().strip('"”„\'`'))
+            if line.startswith('[x]'):
+                answers.append(line[3:].strip().strip('"”„\'`'))
             
         return answers
