@@ -631,7 +631,7 @@ class TestownikCreator(QMainWindow):
                     quiz_data["questions"].append({
                         "question": question,
                         "answers": [{"answer": ans, "correct": corr} for ans, corr in answers if ans.strip() != ""],
-                        "multiple": correct_count > 1
+                        "multiple": True
                     })
 
             with open(filename, 'w', encoding='utf-8') as f:
