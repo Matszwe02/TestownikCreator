@@ -8,6 +8,7 @@ class LLM():
         self.url = ''
         self.key = ''
         self.model = ''
+        self.count = '0'
 
 
     def load_json(self):
@@ -29,7 +30,10 @@ class LLM():
         try:
             with open('config.json', 'r') as f:
                 config = json.load(f)
-                
+        except:
+            config = {}
+        
+        try:
             with open('config.json', 'w') as f:
                 config['url'] = self.url
                 config['key'] = self.key
