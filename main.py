@@ -14,6 +14,7 @@ import resources_rc
 # pyside6-rcc resources.qrc -o resources_rc.py
 from threading import Thread
 from difflib import SequenceMatcher
+import re
 
 
 image_size_limits = [600, 600]
@@ -23,6 +24,9 @@ similarity_limit = 0.6
 def string_similarity(a, b):
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
+
+def strip_str(string: str):
+    return re.sub(r"^[a-z]\)\s", "", (string.strip().replace('•', '').replace('\n', ' ').replace('\t', '  ').replace('\r', '')))
 
 
 def strip_answers_list(answers_list: list[tuple[str, bool]]):
@@ -424,7 +428,14 @@ class TestownikCreator(QMainWindow):
         self.llm_fill_button.setFixedSize(30, 30)
         self.llm_fill_button.clicked.connect(self.llm_click)
         image_layout.addWidget(self.llm_fill_button)
-        
+
+        self.multiline_paste_toggle = QPushButton("Multiline Paste: OFF")
+        self.multiline_paste_toggle.setFixedSize(120, 30)
+        self.multiline_paste_toggle.setCheckable(True)
+        self.multiline_paste_toggle.clicked.connect(self.toggle_multiline_paste)
+        image_layout.addWidget(self.multiline_paste_toggle)
+        self.multiline_paste = False
+
         # Add the horizontal layout to the right layout
         self.right_layout.addLayout(image_layout)
 
@@ -443,6 +454,13 @@ class TestownikCreator(QMainWindow):
         self.layout.addLayout(self.right_layout)
         
         self.connect_signals()
+
+    def toggle_multiline_paste(self):
+        self.multiline_paste = not self.multiline_paste
+        if self.multiline_paste:
+            self.multiline_paste_toggle.setText("Multiline Paste: ON")
+        else:
+            self.multiline_paste_toggle.setText("Multiline Paste: OFF")
 
 
     def _check_llm_status(self):
@@ -876,18 +894,43 @@ class TestownikCreator(QMainWindow):
 
     def update_questions_dict(self):
         if self.is_changing: return
-        
-        question = self.question_input.text().strip().replace('\n', ' ').replace('\t', '  ').replace('\r', '')
-        answers = [(field.text_edit.text().lstrip('•').strip().replace('\n', ' ').replace('\t', '  ').replace('\r', ''), field.checkbox.isChecked()) for field in self.answer_fields]
-        
-        self.questions_list[self.question_no] = {question: answers}
-        self.update_question_list()
-        
+        text = self.question_input.text()
+        lines = text.split('\n')
+
+        if self.multiline_paste and len(lines) > 1:
+            question = strip_str(lines[0])
+            answers = [(strip_str(line), False) for line in lines[1:] if line.strip()]
+
+            # Clear existing answer fields
+            while self.answer_fields:
+                widget = self.answer_container.takeAt(0).widget()
+                if widget:
+                    widget.deleteLater()
+                self.answer_fields.pop()
+
+            # Add new answer fields
+            for answer, is_correct in answers:
+                self.add_answer_field(answer, is_correct)
+            
+            self.is_changing = True # Prevent recursion
+            self.question_input.setText(question)
+            self.is_changing = False
+
+            self.questions_list[self.question_no] = {question: answers}
+            self.update_question_list()
+
+        else:
+            question = strip_str(self.question_input.text())
+            answers = [(strip_str(field.text_edit.text()), field.checkbox.isChecked()) for field in self.answer_fields]
+
+            self.questions_list[self.question_no] = {question: answers}
+            self.update_question_list()
+
         if self.image_drop_area.pil_image:
             self.images[self.question_no] = self.image_drop_area.pil_image
         elif self.question_no in self.images:
             del self.images[self.question_no]
-        
+
         self.update_similar_question(question)
 
 
