@@ -24,8 +24,8 @@ class LLM():
 
     def save_json(self):
         """Save API configuration to file"""
-        if not self.url or not self.key or not self.model:
-            raise ValueError("Provide LLM API settings first!")
+        # if not self.url or not self.key or not self.model:
+        #     raise ValueError("Provide LLM API settings first!")
             
         try:
             with open('config.json', 'r') as f:

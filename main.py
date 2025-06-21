@@ -1,4 +1,4 @@
-import os, sys, subprocess, shlex, zipfile, traceback
+import os, sys, subprocess, shlex, zipfile, traceback, requests
 
 from PySide6.QtWidgets import *
 from PySide6.QtCore import Qt, QBuffer, QTimer
@@ -19,6 +19,43 @@ import re
 
 image_size_limits = [600, 600]
 similarity_limit = 0.6
+
+
+def upload_image_to_imgbb(image_data, api_key):
+    """
+    Uploads an image to imgbb.com and retrieves its URL.
+
+    Args:
+        image_data (bytes): The raw image data (byte stream).
+        api_key (str): Your imgbb.com API key. You can get one from https://api.imgbb.com/.
+
+    Returns:
+        str: The URL of the uploaded image if successful, None otherwise.
+    """
+    url = "https://api.imgbb.com/1/upload"
+    
+    try:
+        files = {'image': ('image.png', image_data, 'image/png')}
+        data = {'key': api_key}
+        
+        response = requests.post(url, files=files, data=data)
+        response.raise_for_status()  # Raise an exception for HTTP errors (4xx or 5xx)
+        
+        result = response.json()
+        
+        if result and result.get('success'):
+            image_url = result['data']['url']
+            print(f"Image uploaded successfully. URL: {image_url}")
+            return image_url
+        else:
+            print(f"Image upload failed. Response: {result}")
+            return None
+    except requests.exceptions.RequestException as e:
+        print(f"An error occurred during the request: {e}")
+        return None
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
+        return None
 
 
 def string_similarity(a, b):
@@ -286,10 +323,11 @@ class AnswerField(QWidget):
 
 
 class SettingsDialog(QDialog):
-    def __init__(self, llm):
+    def __init__(self, llm, imgbb_api_key):
         super().__init__()
         self.setWindowTitle("Settings")
         self.llm = llm
+        self.imgbb_api_key = imgbb_api_key
         self.layout = QVBoxLayout()
         self.setLayout(self.layout)
         
@@ -314,8 +352,18 @@ class SettingsDialog(QDialog):
         self.llm_layout.addWidget(self.model_input)
         self.llm_layout.addWidget(self.count_label)
         self.llm_layout.addWidget(self.count_input)
+
+        self.imgbb_group = QGroupBox("ImgBB Settings")
+        self.imgbb_layout = QVBoxLayout()
+        self.imgbb_group.setLayout(self.imgbb_layout)
+
+        self.imgbb_key_label = QLabel("ImgBB API Key:")
+        self.imgbb_key_input = QLineEdit(self.imgbb_api_key)
+        self.imgbb_layout.addWidget(self.imgbb_key_label)
+        self.imgbb_layout.addWidget(self.imgbb_key_input)
         
         self.layout.addWidget(self.llm_group)
+        self.layout.addWidget(self.imgbb_group)
         
         self.button_box = QHBoxLayout()
         self.ok_button = QPushButton("OK")
@@ -349,6 +397,7 @@ class TestownikCreator(QMainWindow):
         self.images = {}
         self.llm = LLM()
         self.llm.load_json()
+        self.imgbb_api_key = ""
         
         
         
@@ -522,8 +571,9 @@ class TestownikCreator(QMainWindow):
 
     def show_settings(self):
         """Display and edit settings"""
-        dialog = SettingsDialog(self.llm)
+        dialog = SettingsDialog(self.llm, self.imgbb_api_key)
         if dialog.exec():
+            self.imgbb_api_key = dialog.imgbb_key_input.text().strip()
             QMessageBox.information(self, "Settings Saved", "Settings have been saved")
 
 
@@ -642,15 +692,34 @@ class TestownikCreator(QMainWindow):
             }
 
             for question_number, question_data in self.questions_list.items():
+                question_image_url = None
+                if question_number in self.images:
+                    image = self.images[question_number]
+                    img_byte_arr = io.BytesIO()
+                    image.save(img_byte_arr, format='PNG')
+                    img_byte_arr = img_byte_arr.getvalue()
+                    question_image_url = upload_image_to_imgbb(img_byte_arr, self.imgbb_api_key)
+
                 for question, answers in question_data.items():
                     if len(question) < 2 or len(answers) < 1: continue
                     
                     correct_count = sum(corr for _, corr in answers)
-                    quiz_data["questions"].append({
+                    
+                    question_data = {
                         "question": question,
-                        "answers": [{"answer": ans, "correct": corr} for ans, corr in answers if ans.strip() != ""],
+                        "answers": [],
                         "multiple": True
-                    })
+                    }
+                    
+                    if question_image_url:
+                        question_data["image"] = question_image_url
+                    
+                    for ans, corr in answers:
+                        if ans.strip() != "":
+                            answer_data = {"answer": ans, "correct": corr}
+                            question_data["answers"].append(answer_data)
+                    
+                    quiz_data["questions"].append(question_data)
 
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(quiz_data, f, ensure_ascii=False, indent=4)
